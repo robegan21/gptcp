@@ -51,6 +51,8 @@ int main(int argc, char *argv[]) {
     char *src_path = argv[1];
     char *dst_path = argv[2];
 
+    fprintf(stderr, "gptcp copy %s to %s\n", src_path, dst_path);
+
     int src_fd = open(src_path, O_RDONLY);
     if (src_fd == -1) {
         perror("open source");
@@ -70,16 +72,20 @@ int main(int argc, char *argv[]) {
     }
 
     /* added ftruncate for performance by Rob */
-    int ret = ftruncate(dst_fd, src_stat.st_size);
+    off_t file_size = src_stat.st_size;
+    int ret = ftruncate(dst_fd, file_size);
     if (ret != 0) {
         perror("failed to ftruncate");
         return 1;
     }
 
     /* Fixed loop for each thread to manage a large partition of the file */
-    off_t block_size = ( src_stat.st_size + omp_get_num_threads() - 1) / omp_get_num_threads();
+    int threads = omp_get_max_threads();
+    off_t block_size = (file_size + threads - 1) / threads;
     off_t remainder = block_size % BUF_SIZE;
     if (remainder != 0) block_size += BUF_SIZE - remainder; // round up to the nearest 16MB
+							    //
+    fprintf(stderr, "truncate to %f MB complete, starting copy with block_size=%ld on %d threads\n", file_size / 1024. / 1024., block_size, threads);
     int all_good = 0;
 
     #pragma omp parallel reduction(+:all_good)
@@ -92,10 +98,10 @@ int main(int argc, char *argv[]) {
             is_good = 0;
         }
         off_t start = block_size * tid;
-        if (start > src_stat.st_size) start = src_stat.st_size;
+        if (start > file_size) start = file_size;
         off_t offset = start;
         off_t stop = offset + block_size;
-        if (stop > src_stat.st_size) stop = src_stat.st_size;
+        if (stop > file_size) stop = file_size;
         while (is_good == 1 && stop > offset) {
             off_t read_size = stop - offset;
             if (read_size > BUF_SIZE) read_size = BUF_SIZE;
@@ -112,14 +118,18 @@ int main(int argc, char *argv[]) {
         if (offset != stop) { /* fixed detection of incomplete copy */
             fprintf(stderr, "Error: thread %d did not write the entire file offset=%ld != stop=%ld\n", tid, offset, stop);
             is_good = 0;
-        }
+        } else {
+	    /* if (stop != start) fprintf(stderr, "Thread %d copied from %ld to %ld = %f MB\n", tid, start, stop, (stop-start) / 1024. / 1024.); */
+	}
         all_good += is_good;
     }
 
     close(src_fd);
+    fprintf(stderr, "Closed src\n");
     close(dst_fd);
+    fprintf(stderr, "Closed dst\n");
 
-    return all_good == omp_get_num_threads() ? 0 : 1; /* Fixed exit status on failure */
+    return all_good == threads ? 0 : 1; /* Fixed exit status on failure */
 }
 
 /* 
