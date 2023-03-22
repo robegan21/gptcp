@@ -45,8 +45,7 @@ int main(int argc, char *argv[]) {
         while ((bytes_read = pread(src_fd, buf, BUF_SIZE, offset)) > 0) {
             ssize_t bytes_written = pwrite(dst_fd, buf, bytes_read, offset);
             if (bytes_written != bytes_read) {
-                fprintf(stderr, "Error: could not write all bytes in
-thread %d\n", tid);
+                fprintf(stderr, "Error: could not write all bytes in thread %d\n", tid);
                 break;
             }
             offset += bytes_read;
