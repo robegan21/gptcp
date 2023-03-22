@@ -15,6 +15,8 @@ in parallel:
 
 https://github.com/robegan21/gptcp/blob/Original/gpt_copy.cpp
 
+Note that this version does not work optimally and often corrupts the copy
+
 ## Build
 just run make
 
